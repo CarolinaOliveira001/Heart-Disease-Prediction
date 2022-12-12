@@ -1,0 +1,266 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2638
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fnil\fcharset0 Menlo-Bold;\f1\fnil\fcharset0 Menlo-Regular;\f2\fswiss\fcharset0 ArialMT;
+}
+{\colortbl;\red255\green255\blue255;\red40\green43\blue38;\red255\green255\blue255;\red0\green0\blue0;
+\red0\green0\blue0;\red0\green0\blue0;}
+{\*\expandedcolortbl;;\cssrgb\c20784\c21961\c20000;\cssrgb\c100000\c100000\c100000;\csgray\c0;
+\csgray\c0\c0;\cssrgb\c0\c0\c0;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww20420\viewh18000\viewkind0
+\pard\tx566\tx1133\tx1700\tx2204\tx2267\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\tx10014\pardirnatural\partightenfactor0
+
+\f0\b\fs24 \cf0 //First here are the libraries for problem 1:
+\f1\b0 \
+import org.apache.spark.sql.Row\
+import org.apache.spark.sql.SparkSession\
+import org.apache.spark.ml.param.ParamMap\
+import org.apache.spark.ml.\{Pipeline, PipelineModel\}\
+import org.apache.spark.ml.classification.\{DecisionTreeClassifier, DecisionTreeClassificationModel, RandomForestClassifier\}\
+import org.apache.spark.ml.feature.\{StringIndexer, IndexToString, VectorIndexer, FeatureHasher\}\
+import org.apache.spark.ml.evaluation.\{MulticlassClassificationEvaluator, BinaryClassificationEvaluator\}\
+import org.apache.spark.ml.tuning.\{CrossValidator, ParamGridBuilder, CrossValidatorModel\}\
+import org.apache.spark.mllib.evaluation.BinaryClassificationMetrics
+\f2\fs28 \cf2 \cb3 \expnd0\expndtw0\kerning0
+\
+
+\f1\fs24 \cf0 \cb1 \kerning1\expnd0\expndtw0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 \
+\
+
+\f0\b // (a)\
+\
+// Here we are loading the data after uploading it to the cluster. We chose the first option from the teacher. Note that for running the code on our local machine, we sampled the dataset using the following: 
+\f1\b0 val sample = df.sample(false,0.001) 
+\f0\b after loading the dataset. This way is it easier and quicker to work on the data. After solving the exercise on our local machine, we tried the code on the cluster with the whole dataset.
+\f1\b0 \
+\
+val df = spark.read.option("inferSchema", true).option("header", true).csv("/
+\fs22 \cf4 \CocoaLigature0 home/users/coliveira
+\fs24 \cf0 \CocoaLigature1 /heart_2020_cleaned.csv")\
+\
+\
+
+\f0\b // (b)\
+\
+// The next steps will be to find the best model with decision tree.\
+\
+// (i)\
+\
+// Here we split the data into training data and test data. The training data will be 90% of the whole data set and the test data will be 10% of the whole data set.
+\f1\b0 \
+val Array(trainData, testData) = df.randomSplit(Array(0.9, 0.1))\
+\
+
+\f0\b // Here we separate the features from the label. The label will be the HeartDisease column which is two possibility: \'93YES\'94 or \'93NO\'94. So we can clearly see that here are talking about a classification problem. For that we use the StringIndexer model to convert the strings to binary. The features will be every columns except HeartDisease. We obtain that my filtering the dataFrame. Again features will contain columns which are non-numeric, so we need to convert them to numeric. To do so, we use feature hasher which does the one-hot-encoder if the column is categorical. Then it returns one outputCol. Only thing left is the decision tree. The decision tree gets the label column and the feature co\cb5 lumn.
+\f1\b0 \
+val features = df.columns.filter(! _.contains("HeartDisease\cf6 "))\
+val feature = new FeatureHasher().setInputCols(features).setOutputCol("feature").\expnd0\expndtw0\kerning0
+setNumFeatures(8192)\kerning1\expnd0\expndtw0 \
+val label = new StringIndexer().setInputCol("HeartDisease").setOutputCol("label")\
+val decisiontree = new DecisionTreeClassifier().setLabelCol("label").setFeaturesCol("feature")\cf0 \
+\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b \cf6 // We create a pipeline such that goes from feature to label to the decision tree. We fit the pipeline with the training data and transform it to the test data which will add a new column, namely \'93predictions\'94.  
+\f1\b0 \
+val pipeline = new Pipeline().setStages(Array(feature,label,decisiontree))\
+val model = pipeline.fit(trainData)\
+val pred = model.transform(testData)\
+\
+
+\f0\b // We will also save the model, so we don\'92t have to run the whole code again. So we can also load back the model from our directory.
+\f1\b0 \
+\pard\pardeftab720\partightenfactor0
+\cf6 \expnd0\expndtw0\kerning0
+model.write.overwrite().save("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /Exercise_1/decisiontree-model")\
+val model = PipelineModel.load("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /Exercise_1/decisiontree-model")\kerning1\expnd0\expndtw0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf6 \
+
+\f0\b // Here we calculate the accuracy of this decision tree model using the MulticlassClassificationEvaluator. We get the prediction and the actual label from the test data. The accuracy is 
+\f1\b0\fs22 \cf4 \cb1 \CocoaLigature0 0.8786432770754996
+\f0\b\fs24 . \cf6 \cb5 \CocoaLigature1  
+\f1\b0 \
+val predictionAndLabels = pred.select("prediction", "label")\cf0 \
+val evaluator = new MulticlassClassificationEvaluator()\
+val accuracy = evaluator.evaluate(predictionAndLabels)\
+\
+
+\f0\b // (ii)\
+\
+// Here are the hyper parameter chosen my the teacher. The number of fold will be define in the function of Cross-Validation in the next step. \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f1\b0 \cf0 \cb1 val paramgrid = new ParamGridBuilder().addGrid(decisiontree.impurity,Array("gini","entropy")).addGrid(decisiontree.maxBins,Array(20,50,100)).addGrid(decisiontree.maxDepth,Array(5,10,15)).build()\
+val numberOfFolds = 5\cb5 \
+\cb1 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b \cf6 \cb5 // (iii)\
+\
+// The next steps are the Cross Validation to tune our hyper parameters from the decision tree. The hyper parameters and the number of folds were defined in the previous step. We use the metrics from the class BinaryClassificationEvaluator. \cf0 \cb1 The result of the Cross Validation is the best model.\cf6 \cb5 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f1\b0 \cf0 \cb1 val evaluator1 = new BinaryClassificationEvaluator()\
+val cv1 = new CrossValidator().setEstimator(pipeline).setEstimatorParamMaps(paramgrid).setNumFolds(numberOfFolds).setEvaluator(evaluator1)\
+\
+
+\f0\b // Finally, we will fit the best model with the training data and immediately after that we can transform the test data to predict the label. After that we will show the best parameters chosen for the best model.
+\f1\b0 \
+val model1 = cv1.fit(trainData)\
+val pred1 = model1.transform(testData)\
+\
+
+\f0\b // We save the model for reasons explained before.
+\f1\b0 \
+\pard\pardeftab720\partightenfactor0
+\cf6 \cb5 \expnd0\expndtw0\kerning0
+model1.write.overwrite().save("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /E1/decisiontree-cv-model")\
+val model1 = CrossValidatorModel.load("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /E1/decisiontree-cv-model")\cf0 \cb1 \kerning1\expnd0\expndtw0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 \
+\
+
+\f0\b // (iv)\
+\
+// We select the prediction column and the label column and we transform every value to type double.\
+
+\f1\b0 val predictionAndLabelsbest = pred1.select("prediction", "label").rdd.map(x =>( x(0).asInstanceOf[Double],x(1).asInstanceOf[Double]))\
+val metrics = new BinaryClassificationMetrics(predictionAndLabelsbest)\
+
+\f0\b \
+// Here we calculate the accuracy of the best model. The output is: 
+\f1\b0\fs22 \cf4 \CocoaLigature0 00.33652204885568304
+\fs24 \cf0 \CocoaLigature1 \
+val accuracybest = new BinaryClassificationEvaluator().evaluate(pred1)\
+\
+
+\f0\b // Here we calculate the precision by a threshold of the best model. The output is: (
+\f1\b0\fs22 \cf4 \CocoaLigature0 Threshold: 1.0, Precision: 0.6011904761904762), (Threshold: 0.0, Precision: 0.0864398298724043)
+\fs24 \cf0 \CocoaLigature1 \
+val precisionbest = metrics.precisionByThreshold\
+precisionbest.collect().foreach\{case (t, p) => println(s"Threshold: $t, Precision: $p")\}\
+\
+
+\f0\b // Here we calculate the recall by a threshold of the best model. The output is: (
+\f1\b0\fs22 \cf4 \CocoaLigature0 Threshold: 1.0, Recall: 0.03654124457308249), (Threshold: 0.0, Recall: 1.0)
+\fs24 \cf0 \CocoaLigature1 \
+val recallbest = metrics.recallByThreshold\
+recallbest.collect().foreach\{case (t, r) => println(s"Threshold: $t, Recall: $r")\}\
+\
+\
+\
+\
+
+\f0\b // (c)\
+
+\f1\b0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b \cf6 // Here we are following the same process as before but in this case we have Random Forest instead of Decision Trees.\cf0  As it was said at point (a), this a classification problem, so we have to use a RandomForestClassifier. We create a pipeline for the feature, label and randomForest. We fit the training data and immediately after we transform the test data.
+\f1\b0 \
+val randomforest = new RandomForestClassifier().setLabelCol("label").setFeaturesCol("feature")\
+val pipelinerf = new Pipeline().setStages(Array(feature,label,randomforest))\
+val modelrf = pipelinerf.fit(trainData)\
+val predrf = modelrf.transform(testData)\
+\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b \cf0 // We save the previous model.
+\f1\b0 \
+\pard\pardeftab720\partightenfactor0
+\cf6 \cb5 \expnd0\expndtw0\kerning0
+modelrf.write.overwrite().save("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /randomforest-model")\
+val modelrf = PipelineModel.load("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /randomforest-model")\cf0 \cb1 \kerning1\expnd0\expndtw0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 \
+
+\f0\b // We calculate the accuracy of the previous model. The output is: 
+\f1\b0\fs22 \cf4 \CocoaLigature0 0.8747185520396277   
+\fs24 \cf0 \CocoaLigature1 \
+val predictionAndLabels = predrf.select("prediction", "label")\
+val evaluatorrf = new MulticlassClassificationEvaluator()\
+val accuracyrf = evaluatorrf.evaluate(predictionAndLabels)\
+\
+
+\f0\b // We have here the tuning hyper parameters.
+\f1\b0 \
+val paramgridrf = new ParamGridBuilder().addGrid(randomforest.numTrees,Array(5,10,20)).addGrid(randomforest.featureSubsetStrategy,Array("auto")).addGrid(randomforest.impurity,Array("gini","entropy")).addGrid(randomforest.maxBins,Array(20,50,100)).addGrid(randomforest.maxDepth, Array(5,10,15)).build()\
+val numberOfFolds = 5\cb5 \
+\cb1 \
+\
+
+\f0\b // We need to do the Cross Validation. The output model will be the best model. We fit the model with the training data. And again, we transform the test data.
+\f1\b0 \
+val cvrf = new CrossValidator().setEstimator(pipelinerf).setEstimatorParamMaps(paramgridrf).setNumFolds(numberOfFolds).setEvaluator(evaluator1)\
+\
+
+\f0\b // Finally, we will fit the best model with the training data and immediately after that we can transform the test data to predict the label. 
+\f1\b0 \
+val modelrf1 = cvrf.fit(trainData)\
+val predbestrf = modelrf1.transform(testData)\
+\
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\b \cf6 // We save the best model.
+\f1\b0 \cf0 \
+\pard\pardeftab720\partightenfactor0
+\cf6 \cb5 \expnd0\expndtw0\kerning0
+modelrf1.write.overwrite().save("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /randomforest\'97cv-model")\
+val modelrf1 = CrossValidatorModel.load("\kerning1\expnd0\expndtw0 /
+\fs22 \CocoaLigature0 home/users/coliveira
+\fs24 \expnd0\expndtw0\kerning0
+\CocoaLigature1 /randomforest-cv-model")\cf0 \cb1 \kerning1\expnd0\expndtw0 \
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+\cf0 \
+
+\f0\b // We select the prediction column and the label column and we transform every value to type double.
+\f1\b0 \
+val predictionAndLabelsbestrf = predbestrf.select("prediction", "label").rdd.map(x =>( x(0).asInstanceOf[Double],x(1).asInstanceOf[Double]))\
+val metrics = new BinaryClassificationMetrics(predictionAndLabelsbestrf)\
+\
+
+\f0\b // Here we calculate the accuracy of the best model. The output is: 
+\f1\b0\fs22 \cf4 \CocoaLigature0 0.3360699317343867  
+\fs24 \cf0 \CocoaLigature1 \
+val accuracybestrf = new BinaryClassificationEvaluator().evaluate(predbestrf)\
+\
+
+\f0\b // Here we calculate the precision by a threshold of the best model. The output is: (
+\f1\b0\fs22 \cf4 \CocoaLigature0 Threshold: 1.0, Precision: 0.6682926829268293), (Threshold: 0.0, Precision: 0.08477168450950404)
+\fs24 \cf0 \CocoaLigature1 \
+val precisionbestrf = metrics.precisionByThreshold\
+precisionbestrf.collect().foreach \{ case (t, p) => println(s"Threshold: $t, Precision: $p")\}\
+\
+
+\f0\b // Here we calculate the recall by a threshold of the best model. The output is: (
+\f1\b0\fs22 \cf4 \CocoaLigature0 Threshold: 1.0, Recall: 0.05044182621502209), (Threshold: 0.0, Recall: 1.0)
+\fs24 \cf0 \CocoaLigature1 \
+val recallbestrf = metrics.recallByThreshold\
+recallbestrf.collect().foreach \{ case (t, r) => println(s"Threshold: $t, Recall: $r")\}\
+\
+\
+\
+   \
+}
